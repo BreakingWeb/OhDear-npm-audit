@@ -17,10 +17,15 @@ function deriveRoutePath(outputRelative: string): string | null {
   return match ? match[1] : null;
 }
 
+let didRun = false;
+
 export function withOhDearHealth<T>(
   nextConfig: T,
   options?: WithOhDearHealthOptions,
 ): T {
+  if (didRun) return nextConfig;
+  didRun = true;
+
   const cwd = process.cwd();
   const outputRelative =
     options?.output ?? "src/app/api/health/deps-manifest.json";
