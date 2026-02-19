@@ -7,7 +7,7 @@ export interface WithOhDearHealthOptions {
   output?: string;
 }
 
-export function withOhDearHealth<T extends Record<string, unknown>>(
+export function withOhDearHealth<T>(
   nextConfig: T,
   options?: WithOhDearHealthOptions,
 ): T {
