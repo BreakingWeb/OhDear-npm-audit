@@ -47,7 +47,7 @@ export function createHealthHandler(
 
   if (!process.env[envVar]) {
     console.warn(
-      `ohdear-npm-audit: env var ${envVar} is not set — all health check requests will be rejected with 401.`,
+      `ohdear-npm-audit: ${envVar} is not set — all health check requests will be rejected with 401.`,
     );
   }
 
