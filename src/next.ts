@@ -1,5 +1,5 @@
 import { resolve, relative, dirname } from "node:path";
-import { existsSync, statSync, openSync, closeSync } from "node:fs";
+import { existsSync, statSync, openSync, closeSync, unlinkSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -37,6 +37,8 @@ function hasRecentLock(output: string): boolean {
     if (existsSync(lockPath)) {
       const age = Date.now() - statSync(lockPath).mtimeMs;
       if (age < 30_000) return true;
+      // Stale lock — remove before re-creating
+      try { unlinkSync(lockPath); } catch { /* ignore */ }
     }
     // O_WRONLY | O_CREAT | O_EXCL — atomic create, fails if file already exists
     const fd = openSync(lockPath, "wx");
@@ -49,15 +51,36 @@ function hasRecentLock(output: string): boolean {
 }
 
 /**
+ * Build the dependency chain from a package back to a direct dependency
+ * using the reverse dependency map.
+ */
+function buildChainScript(): string {
+  return [
+    `function buildChain(pkg, reverseMap, visited) {`,
+    `  if (visited.has(pkg)) return [pkg];`,
+    `  visited.add(pkg);`,
+    `  const parents = reverseMap[pkg];`,
+    `  if (!parents || parents.length === 0) return [pkg];`,
+    `  const chain = buildChain(parents[0], reverseMap, visited);`,
+    `  chain.push(pkg);`,
+    `  return chain;`,
+    `}`,
+  ].join("\n");
+}
+
+/**
  * Fire-and-forget subprocess to check the manifest against the npm advisory
  * API. Output is inherited so logs appear in the build output. Does not
  * block the build — the subprocess runs in parallel with Next.js compilation.
  */
-function checkVulnerabilities(manifestPath: string): void {
-  const safePath = JSON.stringify(manifestPath);
+function checkVulnerabilities(manifestPath: string, reverseMapPath: string): void {
+  const safeManifestPath = JSON.stringify(manifestPath);
+  const safeReverseMapPath = JSON.stringify(reverseMapPath);
   const script = [
     `const fs = require("fs");`,
-    `const manifest = JSON.parse(fs.readFileSync(${safePath}, "utf-8"));`,
+    `const manifest = JSON.parse(fs.readFileSync(${safeManifestPath}, "utf-8"));`,
+    `const reverseMap = JSON.parse(fs.readFileSync(${safeReverseMapPath}, "utf-8"));`,
+    buildChainScript(),
     `fetch("https://registry.npmjs.org/-/npm/v1/security/advisories/bulk", {`,
     `  method: "POST",`,
     `  headers: { "Content-Type": "application/json" },`,
@@ -69,14 +92,23 @@ function checkVulnerabilities(manifestPath: string): void {
     `  const crits = [];`,
     `  for (const [pkg, entries] of Object.entries(data)) {`,
     `    for (const e of entries) {`,
-    `      if (e.severity === "critical") crits.push(pkg + ": " + e.title);`,
+    `      if (e.severity !== "critical") continue;`,
+    `      const versions = manifest[pkg] || [];`,
+    `      const chain = buildChain(pkg, reverseMap, new Set());`,
+    `      const versionStr = versions.join(", ");`,
+    `      const chainStr = chain.length > 1 ? " (via " + chain.join(" \\u2192 ") + ")" : "";`,
+    `      let line = "  - " + pkg + "@" + versionStr + chainStr + ": " + e.title;`,
+    `      if (e.vulnerable_versions) {`,
+    `        line += "\\n    vulnerable: " + e.vulnerable_versions + " \\u2014 " + e.url;`,
+    `      }`,
+    `      crits.push(line);`,
     `    }`,
     `  }`,
     `  if (crits.length > 0) {`,
     `    console.warn("ohdear-npm-audit: " + crits.length + " critical vulnerabilities:");`,
-    `    crits.forEach(c => console.warn("  - " + c));`,
+    `    crits.forEach(c => console.warn(c));`,
     `  } else {`,
-    `    console.log("ohdear-npm-audit: no critical vulnerabilities ✓");`,
+    `    console.log("ohdear-npm-audit: no critical vulnerabilities \\u2713");`,
     `  }`,
     `})`,
     `.catch(() => {});`,
@@ -101,7 +133,7 @@ export function withOhDearHealth<T>(
   if (hasRecentLock(output)) return nextConfig;
 
   try {
-    const manifest = writeManifest(output, cwd);
+    const { manifest, reverseMapPath } = writeManifest(output, cwd);
     console.log(
       `ohdear-npm-audit: ${Object.keys(manifest).length} packages written → ${output}`,
     );
@@ -121,10 +153,13 @@ export function withOhDearHealth<T>(
     }
 
     if (options?.checkOnBuild !== false) {
-      checkVulnerabilities(output);
+      checkVulnerabilities(output, reverseMapPath);
     }
   } catch (err) {
-    console.error("ohdear-npm-audit: failed to generate dependency manifest.");
+    console.error(
+      "ohdear-npm-audit: failed to generate dependency manifest.",
+      err instanceof Error ? err.message : err,
+    );
     throw err;
   }
 

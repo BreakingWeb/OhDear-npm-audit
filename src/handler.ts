@@ -85,7 +85,12 @@ export function createHealthHandler(
 
     let advisories: Record<
       string,
-      Array<{ severity: string; title: string; url: string }>
+      Array<{
+        severity: string;
+        title: string;
+        url: string;
+        vulnerable_versions: string;
+      }>
     >;
     try {
       advisories = await res.json();
@@ -99,7 +104,14 @@ export function createHealthHandler(
     for (const [pkg, entries] of Object.entries(advisories)) {
       for (const entry of entries) {
         if (entry.severity === "critical") {
-          critical.push({ package: pkg, title: entry.title, url: entry.url });
+          const versions = manifest[pkg] ?? [];
+          critical.push({
+            package: pkg,
+            installedVersion: versions.join(", "),
+            title: entry.title,
+            url: entry.url,
+            vulnerableVersions: entry.vulnerable_versions ?? "",
+          });
         }
       }
     }

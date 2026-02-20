@@ -2,8 +2,11 @@ export type DepsManifest = Record<string, string[]>;
 
 export interface Vulnerability {
   package: string;
+  installedVersion: string;
   title: string;
   url: string;
+  vulnerableVersions: string;
+  dependencyChain?: string[];
 }
 
 export interface HealthCheckResult {
