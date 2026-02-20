@@ -1,8 +1,11 @@
-export type DepsManifest = Record<string, string[]>;
+export interface DepsManifest {
+  packages: Record<string, string[]>;
+  reverseDeps: Record<string, string[]>;
+}
 
 export interface Vulnerability {
   package: string;
-  installedVersion: string;
+  installedVersions: string[];
   title: string;
   url: string;
   vulnerableVersions: string;

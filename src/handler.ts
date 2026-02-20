@@ -15,11 +15,31 @@ const NPM_BULK_ADVISORY_URL =
 
 const FETCH_TIMEOUT_MS = 8_000;
 
+type ReverseDepsMap = Record<string, string[]>;
+
 export interface CreateHealthHandlerOptions {
   /** Environment variable name for the secret. Default: "OHDEAR_HEALTH_SECRET" */
   secretEnvVar?: string;
   /** Header name for the secret. Default: "oh-dear-health-check-secret" */
   secretHeader?: string;
+}
+
+/** BFS from pkg up through reverseMap to find the shortest chain to a root dep. */
+function buildChain(pkg: string, reverseMap: ReverseDepsMap): string[] {
+  const queue: string[][] = [[pkg]];
+  const visited = new Set<string>([pkg]);
+  while (queue.length > 0) {
+    const path = queue.shift()!;
+    const current = path[path.length - 1];
+    const parents = reverseMap[current];
+    if (!parents || parents.length === 0) return [...path].reverse();
+    for (const parent of parents) {
+      if (visited.has(parent)) continue;
+      visited.add(parent);
+      queue.push([...path, parent]);
+    }
+  }
+  return [pkg];
 }
 
 function makeWarningResponse(message: string): HealthCheckResponse {
@@ -64,7 +84,7 @@ export function createHealthHandler(
       res = await fetch(NPM_BULK_ADVISORY_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(manifest),
+        body: JSON.stringify(manifest.packages),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
     } catch (err) {
@@ -104,14 +124,16 @@ export function createHealthHandler(
     for (const [pkg, entries] of Object.entries(advisories)) {
       for (const entry of entries) {
         if (entry.severity === "critical") {
-          const versions = manifest[pkg] ?? [];
-          critical.push({
+          const versions = manifest.packages[pkg] ?? [];
+          const vuln: Vulnerability = {
             package: pkg,
-            installedVersion: versions.join(", "),
+            installedVersions: versions,
             title: entry.title,
             url: entry.url,
             vulnerableVersions: entry.vulnerable_versions ?? "",
-          });
+            dependencyChain: buildChain(pkg, manifest.reverseDeps),
+          };
+          critical.push(vuln);
         }
       }
     }

@@ -38,8 +38,8 @@ function walkDeps(
     if (!info.version) continue;
     if (!acc[name]) acc[name] = new Set();
     acc[name].add(info.version);
+    if (!reverseDeps[name]) reverseDeps[name] = new Set();
     if (parent !== "root") {
-      if (!reverseDeps[name]) reverseDeps[name] = new Set();
       reverseDeps[name].add(parent);
     }
     walkDeps(info.dependencies, acc, reverseDeps, name);
@@ -72,12 +72,7 @@ function execToFile(command: string, cwd: string): string {
   }
 }
 
-export interface GenerateResult {
-  manifest: DepsManifest;
-  reverseDeps: Record<string, string[]>;
-}
-
-export function generateManifest(cwd: string): GenerateResult {
+export function generateManifest(cwd: string): DepsManifest {
   const pm = detectPackageManager(cwd);
   console.log(`ohdear-npm-audit: detected package manager → ${pm}`);
 
@@ -102,9 +97,9 @@ export function generateManifest(cwd: string): GenerateResult {
   const reverseAcc: ReverseDeps = {};
   walkDeps(tree.dependencies, acc, reverseAcc, "root");
 
-  const manifest: DepsManifest = {};
+  const packages: Record<string, string[]> = {};
   for (const [name, versions] of Object.entries(acc)) {
-    manifest[name] = [...versions];
+    packages[name] = [...versions];
   }
 
   const reverseDeps: Record<string, string[]> = {};
@@ -112,21 +107,12 @@ export function generateManifest(cwd: string): GenerateResult {
     reverseDeps[name] = [...parents];
   }
 
-  return { manifest, reverseDeps };
+  return { packages, reverseDeps };
 }
 
-export interface WriteManifestResult {
-  manifest: DepsManifest;
-  reverseMapPath: string;
-}
-
-export function writeManifest(outputPath: string, cwd: string): WriteManifestResult {
-  const { manifest, reverseDeps } = generateManifest(cwd);
+export function writeManifest(outputPath: string, cwd: string): DepsManifest {
+  const manifest = generateManifest(cwd);
   mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, JSON.stringify(manifest, null, 2) + "\n");
-
-  const reverseMapPath = resolve(dirname(outputPath), "deps-reverse-map.json");
-  writeFileSync(reverseMapPath, JSON.stringify(reverseDeps, null, 2) + "\n");
-
-  return { manifest, reverseMapPath };
+  return manifest;
 }

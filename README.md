@@ -33,7 +33,13 @@ export default withOhDearHealth({
 });
 ```
 
-The wrapper generates the manifest automatically when the config is evaluated (before the build starts). It also checks for critical vulnerabilities at build time and logs the results.
+The wrapper generates the manifest automatically when the config is evaluated (before the build starts). It also checks for critical vulnerabilities at build time and logs enriched results including dependency chains and vulnerable version ranges:
+
+```
+ohdear-npm-audit: 1 critical vulnerabilities:
+  - form-data@1.0.0 (via axios → form-data): unsafe random function
+    vulnerable: <1.0.1 — https://github.com/advisories/GHSA-xxx
+```
 
 ```js
 withOhDearHealth(nextConfig, {
@@ -72,8 +78,8 @@ This must match the secret configured in Oh Dear for your application health che
 
 ## How it works
 
-1. **Build time** — The CLI or Next.js wrapper runs `pnpm list` / `npm ls` to extract all production dependencies (including transitive) and writes them to a JSON manifest. When using the Next.js wrapper, a build-time vulnerability check is also performed and results are logged
-2. **Runtime** — On each GET request, the handler verifies the Oh Dear secret header, POSTs the manifest to the [npm bulk advisory API](https://docs.npmjs.com/about-audit-reports), filters for critical severity, and returns the result in the [Oh Dear health check format](https://ohdear.app/docs/features/application-health-monitoring)
+1. **Build time** — The CLI or Next.js wrapper runs `pnpm list` / `npm ls` to extract all production dependencies (including transitive) and writes them to a JSON manifest that includes a reverse dependency map for tracing dependency chains. When using the Next.js wrapper, a build-time vulnerability check is performed and results are logged with the full dependency chain (e.g. `axios → form-data`) and vulnerable version ranges
+2. **Runtime** — On each GET request, the handler verifies the Oh Dear secret header, POSTs the manifest to the [npm bulk advisory API](https://docs.npmjs.com/about-audit-reports), filters for critical severity, and returns the result in the [Oh Dear health check format](https://ohdear.app/docs/features/application-health-monitoring). Each vulnerability includes installed versions, vulnerable version range, and the dependency chain
 
 ### Response format
 
@@ -90,6 +96,19 @@ This must match the secret configured in Oh Dear for your application health che
       "meta": {}
     }
   ]
+}
+```
+
+When vulnerabilities are found, `meta.vulnerabilities` contains an array of:
+
+```json
+{
+  "package": "form-data",
+  "installedVersions": ["1.0.0"],
+  "title": "form-data uses unsafe random function",
+  "url": "https://github.com/advisories/GHSA-xxx",
+  "vulnerableVersions": "<1.0.1",
+  "dependencyChain": ["axios", "form-data"]
 }
 ```
 
@@ -132,7 +151,7 @@ Defaults to `deps-manifest.json` in the current directory. Detects the package m
 ```
 src/
 ├── types.ts      # Shared types (DepsManifest, Vulnerability, HealthCheckResponse)
-├── generate.ts   # Manifest generation logic (build-time, execSync)
+├── generate.ts   # Manifest + reverse dep map generation (build-time, execSync)
 ├── handler.ts    # createHealthHandler factory — main export "."
 ├── next.ts       # withOhDearHealth wrapper — export "./next"
 └── bin.ts        # CLI entry point — bin "ohdear-deps-manifest"

@@ -13,8 +13,8 @@ if (outputIdx !== -1 && args[outputIdx + 1]) {
 
 const cwd = process.cwd();
 const outputPath = resolve(cwd, output);
-const { manifest } = writeManifest(outputPath, cwd);
+const manifest = writeManifest(outputPath, cwd);
 
 console.log(
-  `deps-manifest.json: ${Object.keys(manifest).length} packages written`,
+  `${output}: ${Object.keys(manifest.packages).length} packages written`,
 );

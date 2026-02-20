@@ -56,14 +56,21 @@ function hasRecentLock(output: string): boolean {
  */
 function buildChainScript(): string {
   return [
-    `function buildChain(pkg, reverseMap, visited) {`,
-    `  if (visited.has(pkg)) return [pkg];`,
-    `  visited.add(pkg);`,
-    `  const parents = reverseMap[pkg];`,
-    `  if (!parents || parents.length === 0) return [pkg];`,
-    `  const chain = buildChain(parents[0], reverseMap, visited);`,
-    `  chain.push(pkg);`,
-    `  return chain;`,
+    `function buildChain(pkg, reverseMap) {`,
+    `  const queue = [[pkg]];`,
+    `  const visited = new Set([pkg]);`,
+    `  while (queue.length > 0) {`,
+    `    const path = queue.shift();`,
+    `    const current = path[path.length - 1];`,
+    `    const parents = reverseMap[current];`,
+    `    if (!parents || parents.length === 0) return path.slice().reverse();`,
+    `    for (const parent of parents) {`,
+    `      if (visited.has(parent)) continue;`,
+    `      visited.add(parent);`,
+    `      queue.push([...path, parent]);`,
+    `    }`,
+    `  }`,
+    `  return [pkg];`,
     `}`,
   ].join("\n");
 }
@@ -73,18 +80,18 @@ function buildChainScript(): string {
  * API. Output is inherited so logs appear in the build output. Does not
  * block the build — the subprocess runs in parallel with Next.js compilation.
  */
-function checkVulnerabilities(manifestPath: string, reverseMapPath: string): void {
-  const safeManifestPath = JSON.stringify(manifestPath);
-  const safeReverseMapPath = JSON.stringify(reverseMapPath);
+function checkVulnerabilities(manifestPath: string): void {
+  const safePath = JSON.stringify(manifestPath);
   const script = [
     `const fs = require("fs");`,
-    `const manifest = JSON.parse(fs.readFileSync(${safeManifestPath}, "utf-8"));`,
-    `const reverseMap = JSON.parse(fs.readFileSync(${safeReverseMapPath}, "utf-8"));`,
+    `const data = JSON.parse(fs.readFileSync(${safePath}, "utf-8"));`,
+    `const packages = data.packages;`,
+    `const reverseMap = data.reverseDeps;`,
     buildChainScript(),
     `fetch("https://registry.npmjs.org/-/npm/v1/security/advisories/bulk", {`,
     `  method: "POST",`,
     `  headers: { "Content-Type": "application/json" },`,
-    `  body: JSON.stringify(manifest),`,
+    `  body: JSON.stringify(packages),`,
     `  signal: AbortSignal.timeout(8000),`,
     `})`,
     `.then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })`,
@@ -93,8 +100,8 @@ function checkVulnerabilities(manifestPath: string, reverseMapPath: string): voi
     `  for (const [pkg, entries] of Object.entries(data)) {`,
     `    for (const e of entries) {`,
     `      if (e.severity !== "critical") continue;`,
-    `      const versions = manifest[pkg] || [];`,
-    `      const chain = buildChain(pkg, reverseMap, new Set());`,
+    `      const versions = packages[pkg] || [];`,
+    `      const chain = buildChain(pkg, reverseMap);`,
     `      const versionStr = versions.join(", ");`,
     `      const chainStr = chain.length > 1 ? " (via " + chain.join(" \\u2192 ") + ")" : "";`,
     `      let line = "  - " + pkg + "@" + versionStr + chainStr + ": " + e.title;`,
@@ -111,7 +118,7 @@ function checkVulnerabilities(manifestPath: string, reverseMapPath: string): voi
     `    console.log("ohdear-npm-audit: no critical vulnerabilities \\u2713");`,
     `  }`,
     `})`,
-    `.catch(() => {});`,
+    `.catch(err => console.warn("ohdear-npm-audit: build-time vulnerability check failed:", err.message || err));`,
   ].join("\n");
 
   const child = spawn("node", ["-e", script], {
@@ -133,9 +140,9 @@ export function withOhDearHealth<T>(
   if (hasRecentLock(output)) return nextConfig;
 
   try {
-    const { manifest, reverseMapPath } = writeManifest(output, cwd);
+    const manifest = writeManifest(output, cwd);
     console.log(
-      `ohdear-npm-audit: ${Object.keys(manifest).length} packages written → ${output}`,
+      `ohdear-npm-audit: ${Object.keys(manifest.packages).length} packages written → ${output}`,
     );
 
     const routePath = deriveRoutePath(relative(cwd, output));
@@ -153,7 +160,7 @@ export function withOhDearHealth<T>(
     }
 
     if (options?.checkOnBuild !== false) {
-      checkVulnerabilities(output, reverseMapPath);
+      checkVulnerabilities(output);
     }
   } catch (err) {
     console.error(
