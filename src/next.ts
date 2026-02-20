@@ -1,6 +1,6 @@
 import { resolve, relative, dirname } from "node:path";
-import { existsSync, statSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { existsSync, statSync, openSync, closeSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { writeManifest } from "./generate.js";
@@ -38,22 +38,25 @@ function hasRecentLock(output: string): boolean {
       const age = Date.now() - statSync(lockPath).mtimeMs;
       if (age < 30_000) return true;
     }
+    // O_WRONLY | O_CREAT | O_EXCL — atomic create, fails if file already exists
+    const fd = openSync(lockPath, "wx");
+    closeSync(fd);
+    return false;
   } catch {
-    // ignore — regenerate
+    // Another worker created the lock between our check and open — skip
+    return true;
   }
-
-  writeFileSync(lockPath, String(process.pid));
-  return false;
 }
 
 /**
- * Spawn a subprocess to check the manifest against the npm advisory API.
- * Non-blocking for the build: silently catches errors.
+ * Fire-and-forget subprocess to check the manifest against the npm advisory
+ * API. Output is inherited so logs appear in the build output. Does not
+ * block the build — the subprocess runs in parallel with Next.js compilation.
  */
 function checkVulnerabilities(manifestPath: string): void {
   const script = [
     `const fs = require("fs");`,
-    `const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf-8"));`,
+    `const manifest = JSON.parse(fs.readFileSync(process.argv[2], "utf-8"));`,
     `fetch("https://registry.npmjs.org/-/npm/v1/security/advisories/bulk", {`,
     `  method: "POST",`,
     `  headers: { "Content-Type": "application/json" },`,
@@ -78,11 +81,11 @@ function checkVulnerabilities(manifestPath: string): void {
     `.catch(() => {});`,
   ].join("\n");
 
-  spawnSync("node", ["-e", script, manifestPath], {
-    encoding: "utf-8",
+  const child = spawn("node", ["-e", script, manifestPath], {
     stdio: "inherit",
-    timeout: 10_000,
+    detached: true,
   });
+  child.unref();
 }
 
 export function withOhDearHealth<T>(

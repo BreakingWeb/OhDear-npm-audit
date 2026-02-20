@@ -23,7 +23,7 @@ src/
 
 ## Conventions
 
-- ESM only (`"type": "module"`)
+- CJS output (compatible Next.js 14–16, both `require()` and `import`)
 - Build with `tsc`, output in `dist/`
 - Auto-detect package manager (pnpm or npm) via lockfile — yarn not supported
 - Expected env var: `OHDEAR_HEALTH_SECRET`

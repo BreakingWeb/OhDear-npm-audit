@@ -153,7 +153,7 @@ pnpm install
 pnpm build
 ```
 
-ESM only. TypeScript compiled with `tsc`, output in `dist/`.
+CJS output. TypeScript compiled with `tsc`, output in `dist/`. Compatible with both `require()` and `import`.
 
 ## Credits
 
