@@ -45,15 +45,17 @@ export function createHealthHandler(
   const envVar = options?.secretEnvVar ?? "OHDEAR_HEALTH_SECRET";
   const headerName = options?.secretHeader ?? "oh-dear-health-check-secret";
 
-  if (!process.env[envVar]) {
-    console.warn(
-      `ohdear-npm-audit: ${envVar} is not set — all health check requests will be rejected with 401.`,
-    );
-  }
+  let didWarn = false;
 
   return async (request: Request): Promise<Response> => {
     const secret = request.headers.get(headerName);
     if (!secret || secret !== process.env[envVar]) {
+      if (!didWarn && !process.env[envVar]) {
+        console.warn(
+          `ohdear-npm-audit: ${envVar} is not set — all health check requests will be rejected with 401.`,
+        );
+        didWarn = true;
+      }
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 

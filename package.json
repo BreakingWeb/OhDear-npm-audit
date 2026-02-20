@@ -1,6 +1,6 @@
 {
   "name": "ohdear-npm-audit",
-  "version": "0.1.4",
+  "version": "0.1.7",
   "description": "Oh Dear Application Health check for npm audit critical vulnerabilities",
   "type": "module",
   "exports": {

@@ -9,7 +9,7 @@ src/
 ├── types.ts      # Shared types
 ├── generate.ts   # Build-time manifest generation (execSync pnpm/npm)
 ├── handler.ts    # createHealthHandler() — export "."
-├── next.ts       # withOhDearHealth() — export "./next"
+├── next.ts       # withOhDearHealth() — export "./next" (lockfile dedup, build-time vuln check)
 └── bin.ts        # CLI ohdear-deps-manifest
 ```
 
@@ -29,6 +29,8 @@ src/
 - Expected env var: `OHDEAR_HEALTH_SECRET`
 - `next` is an optional peerDependency (only for `./next`)
 - Node >= 20 required (`Response.json()`)
+- Next.js wrapper uses temp lockfile to run once across workers
+- Build-time vulnerability check via subprocess (enabled by default, `checkOnBuild: false` to disable)
 
 ## Commands
 

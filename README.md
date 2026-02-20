@@ -33,11 +33,12 @@ export default withOhDearHealth({
 });
 ```
 
-The wrapper generates the manifest automatically when the config is evaluated (before the build starts). You can customize the output path:
+The wrapper generates the manifest automatically when the config is evaluated (before the build starts). It also checks for critical vulnerabilities at build time and logs the results.
 
 ```js
 withOhDearHealth(nextConfig, {
   output: "src/app/api/health/deps-manifest.json", // default
+  checkOnBuild: true, // default — set to false to skip the build-time vulnerability check
 });
 ```
 
@@ -46,10 +47,14 @@ withOhDearHealth(nextConfig, {
 ```ts
 // src/app/api/health/route.ts (Next.js App Router)
 import { createHealthHandler } from "ohdear-npm-audit";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore — generated at build time by ohdear-npm-audit
 import manifest from "./deps-manifest.json" with { type: "json" };
 
 export const GET = createHealthHandler(manifest);
 ```
+
+> **Note:** The `@ts-ignore` is needed because `deps-manifest.json` does not exist until the first build. Do not use `@ts-expect-error` — it will fail the build since the file exists at that point.
 
 ### 3. Set the environment variable
 
@@ -67,7 +72,7 @@ This must match the secret configured in Oh Dear for your application health che
 
 ## How it works
 
-1. **Build time** — The CLI or Next.js wrapper runs `pnpm list` / `npm ls` to extract all production dependencies (including transitive) and writes them to a JSON manifest
+1. **Build time** — The CLI or Next.js wrapper runs `pnpm list` / `npm ls` to extract all production dependencies (including transitive) and writes them to a JSON manifest. When using the Next.js wrapper, a build-time vulnerability check is also performed and results are logged
 2. **Runtime** — On each GET request, the handler verifies the Oh Dear secret header, POSTs the manifest to the [npm bulk advisory API](https://docs.npmjs.com/about-audit-reports), filters for critical severity, and returns the result in the [Oh Dear health check format](https://ohdear.app/docs/features/application-health-monitoring)
 
 ### Response format
@@ -108,6 +113,7 @@ Next.js config wrapper that generates the manifest before the build.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `output` | `"src/app/api/health/deps-manifest.json"` | Output path for the manifest |
+| `checkOnBuild` | `true` | Check for critical vulnerabilities at build time |
 
 ### CLI `ohdear-deps-manifest`
 

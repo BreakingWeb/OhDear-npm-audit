@@ -34,8 +34,9 @@ function walkDeps(
 // execSync throws on non-zero exit codes, but npm ls exits with code 1
 // on missing/extraneous packages while still writing valid JSON to stdout.
 function execCommand(command: string, cwd: string): string {
+  const opts = { cwd, encoding: "utf-8" as const, maxBuffer: 50 * 1024 * 1024 };
   try {
-    return execSync(command, { cwd, encoding: "utf-8" });
+    return execSync(command, opts);
   } catch (err: unknown) {
     const stdout = (err as { stdout?: string }).stdout;
     if (stdout) return stdout;
