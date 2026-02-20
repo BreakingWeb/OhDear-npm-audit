@@ -54,9 +54,10 @@ function hasRecentLock(output: string): boolean {
  * block the build — the subprocess runs in parallel with Next.js compilation.
  */
 function checkVulnerabilities(manifestPath: string): void {
+  const safePath = JSON.stringify(manifestPath);
   const script = [
     `const fs = require("fs");`,
-    `const manifest = JSON.parse(fs.readFileSync(process.argv[2], "utf-8"));`,
+    `const manifest = JSON.parse(fs.readFileSync(${safePath}, "utf-8"));`,
     `fetch("https://registry.npmjs.org/-/npm/v1/security/advisories/bulk", {`,
     `  method: "POST",`,
     `  headers: { "Content-Type": "application/json" },`,
@@ -81,7 +82,7 @@ function checkVulnerabilities(manifestPath: string): void {
     `.catch(() => {});`,
   ].join("\n");
 
-  const child = spawn("node", ["-e", script, manifestPath], {
+  const child = spawn("node", ["-e", script], {
     stdio: "inherit",
     detached: true,
   });
